@@ -33,6 +33,7 @@ class MessengerClient:
         self.certs = {}  # certificates of other users
 
 
+
     def generate_certificate(self, username: str) -> dict:
         """
         Generate a certificate to be stored with the certificate authority.
@@ -47,7 +48,7 @@ class MessengerClient:
         elgamal_keys = generate_eg()
         self.private_key = elgamal_keys["private"]
         self.public_key = elgamal_keys["public"]
-        certificate = {"username": username, "public": elgamal_keys["public"]}
+        certificate = {"username": username, "public": self.public_key}
         self.certificate = certificate
         return certificate
 
@@ -66,7 +67,7 @@ class MessengerClient:
         if verify_with_ecdsa(self.ca_public_key, str(certificate), signature):
             self.certs[certificate["username"]] = certificate
         else:
-            raise Exception("signature not valid.")
+            raise ValueError("Tampering detected!")
 
     
 
@@ -88,23 +89,23 @@ class MessengerClient:
         if name not in self.conns:
             dh = compute_dh(self.private_key, self.certs[name]["public"])
             iv = gen_random_salt()
-            root_key, chain_key = hkdf(dh, iv, "test")
-            self.conns[name] = {"root_key": root_key, "chain_key": chain_key}
+            root_key, sending_key = hkdf(dh, iv, "test")
+            self.conns[name] = {"root_key": root_key, "sending_key": sending_key}
+            self.conns[name]["public"] = self.certs[name]["public"]
             header["root_key"] = iv
             header["name"] = self.certificate["username"]
-        else:
-            pass
 
-        message_key, next_chain_key = kdf_ck(self.conns[name]["chain_key"])
-        self.conns[name]["chain_key"] = next_chain_key
+        message_key, sending_key = kdf_ck(self.conns[name]["sending_key"])
+        self.conns[name]["sending_key"] = sending_key
 
         iv = gen_random_salt()
         ciphertext_info = encrypt_with_gcm(message_key, plaintext, iv)
 
 
-        header["root_key"] = self.conns[name]["root_key"]
+        # header["root_key"] = self.conns[name]["root_key"]
         header["name"] = self.certificate["username"]
         header["iv"] = iv
+        header["public"] = self.public_key
         ciphertext = ciphertext_info
         return header, ciphertext
 
@@ -120,9 +121,34 @@ class MessengerClient:
         Returns:
             plaintext: str
         """
-        raise NotImplementedError("not implemented!")
+
         header, ciphertext = message
-        plaintext = ""
+        is_public_key_changed = self.certs[name]["public"] != header["public"]
+
+
+        if is_public_key_changed or name not in self.conns:
+            dh = compute_dh(self.private_key, header["public"])
+            root_key, receiving_key = hkdf(dh, header["root_key"] if "root_key" in header else self.conns[name]["root_key"], "test")
+            self.conns[name] = {"root_key": root_key, "receiving_key": receiving_key}
+
+            _ = self.generate_certificate(self.certificate["username"])
+
+            dh = compute_dh(self.private_key, header["public"])
+            root_key, chain_key = hkdf(dh, root_key, "test")
+            self.conns[name]["root_key"] = root_key 
+            self.conns[name]["sending_key"] = chain_key
+
+            self.certs[name]["public"] = header["public"]
+
+        
+
+        message_key, receiving_key = kdf_ck(self.conns[name]["receiving_key"])
+        self.conns[name]["receiving_key"] = receiving_key
+
+
+        plaintext = decrypt_with_gcm(message_key, ciphertext, header["iv"])
+
+        
         return plaintext
 
 
