@@ -61,7 +61,7 @@ class MessengerClient:
             None
         """
         if verify_with_ecdsa(self.ca_public_key, str(certificate), signature):
-            self.certs[certificate["username"]: certificate]
+            self.certs[certificate["username"]] = certificate
         else:
             raise Exception("signature not valid.")
 

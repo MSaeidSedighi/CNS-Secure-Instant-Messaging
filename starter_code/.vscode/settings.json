@@ -1,0 +1,14 @@
+{
+    "python.analysis.extraPaths": [
+        "./starter_code/src"
+    ],
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./starter_code",
+        "-p",
+        "test_*.py"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true
+}
