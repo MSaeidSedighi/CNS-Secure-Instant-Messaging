@@ -6,10 +6,14 @@
 ###############################################################################
 import sys
 import os
+import threading
+import time
 import unittest
 import timeout_decorator
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 from messenger import MessengerClient
+from messenger import receive_via_simulated_ipsec, send_via_simulated_ipsec
 from lib import (
     generate_ecdsa,
     generate_eg,
@@ -377,6 +381,37 @@ class TestFramework(unittest.TestCase):
         result3 = self.bob.receive_message("alice", ciphertext3)
         self.assertEqual(message3, result3)
         print("\n16) Test passed: Handles messages where shuffling occurs around DH ratchet steps.")
+
+    @timeout_decorator.timeout(5)
+    def test_17_ipsec_send_receive(self):
+        test_data = b"Secret message"
+        sender_ip = "127.0.0.1"
+        receiver_ip = "127.0.0.1"
+        port = 12345  # use an available port
+
+        received_data = {}
+
+        def receiver():
+            plaintext = receive_via_simulated_ipsec(receiver_ip, port)
+            received_data['msg'] = plaintext
+
+        # Start receiver thread
+        receiver_thread = threading.Thread(target=receiver)
+        receiver_thread.start()
+
+        # Give receiver a moment to bind and wait
+        time.sleep(0.1)
+
+        # Send data
+        send_via_simulated_ipsec(sender_ip, port, test_data)
+
+        # Wait for thread to finish
+        receiver_thread.join(timeout=1.0)
+
+        # Assert received message matches sent message
+        self.assertIn('msg', received_data)
+        self.assertEqual(received_data['msg'], test_data)
+        print("\n17) Test passed: Send and Recieve messages Secure accross IpSec Protocol.")
 
 
 if __name__ == "__main__":
