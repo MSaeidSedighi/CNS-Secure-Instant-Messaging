@@ -43,8 +43,9 @@ class MessengerClient:
         Returns:
             certificate: dict
         """
-        raise NotImplementedError("not implemented!")
-        certificate = {}
+        elgamal_keys = generate_eg()
+        self.elgamal_private_key = elgamal_keys["private"]
+        certificate = {"username": username, "public": elgamal_keys["public"]}
         return certificate
 
 
@@ -59,7 +60,14 @@ class MessengerClient:
         Returns:
             None
         """
-        raise NotImplementedError("not implemented!")
+        if verify_with_ecdsa(self.ca_public_key, str(certificate), signature):
+            self.certs[certificate["username"]: certificate]
+        else:
+            raise Exception("signature not valid.")
+
+    
+
+
 
 
     def send_message(self, name: str, plaintext: str) -> tuple[dict, tuple[bytes, bytes]]:
