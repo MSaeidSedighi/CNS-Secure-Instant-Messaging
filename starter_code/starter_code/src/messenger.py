@@ -14,6 +14,7 @@ from lib import (
     hkdf,
     encrypt_with_gcm,
     decrypt_with_gcm,
+    kdf_ck,
 )
 import socket
 
@@ -44,8 +45,10 @@ class MessengerClient:
             certificate: dict
         """
         elgamal_keys = generate_eg()
-        self.elgamal_private_key = elgamal_keys["private"]
+        self.private_key = elgamal_keys["private"]
+        self.public_key = elgamal_keys["public"]
         certificate = {"username": username, "public": elgamal_keys["public"]}
+        self.certificate = certificate
         return certificate
 
 
@@ -81,9 +84,28 @@ class MessengerClient:
         Returns:
             (header, ciphertext): tuple(dict, tuple(bytes, bytes))
         """
-        raise NotImplementedError("not implemented!")
         header = {}
-        ciphertext = ""
+        if name not in self.conns:
+            dh = compute_dh(self.private_key, self.certs[name]["public"])
+            iv = gen_random_salt()
+            root_key, chain_key = hkdf(dh, iv, "test")
+            self.conns[name] = {"root_key": root_key, "chain_key": chain_key}
+            header["root_key"] = iv
+            header["name"] = self.certificate["username"]
+        else:
+            pass
+
+        message_key, next_chain_key = kdf_ck(self.conns[name]["chain_key"])
+        self.conns[name]["chain_key"] = next_chain_key
+
+        iv = gen_random_salt()
+        ciphertext_info = encrypt_with_gcm(message_key, plaintext, iv)
+
+
+        header["root_key"] = self.conns[name]["root_key"]
+        header["name"] = self.certificate["username"]
+        header["iv"] = iv
+        ciphertext = ciphertext_info
         return header, ciphertext
 
 
