@@ -87,11 +87,17 @@ class MessengerClient:
         """
         header = {}
         if name not in self.conns:
-            dh = compute_dh(self.private_key, self.certs[name]["public"])
+            
+            self.conns[name] = {}
+            self.conns[name]["their_public"] = self.certs[name]["public"]
+            self.generate_new_session_keys(name)
+
+            dh = compute_dh(self.conns[name]["private"], self.conns[name]["their_public"])
             iv = gen_random_salt()
             root_key, sending_key = hkdf(dh, iv, "test")
-            self.conns[name] = {"root_key": root_key, "sending_key": sending_key}
-            self.conns[name]["public"] = self.certs[name]["public"]
+            self.conns[name]["root_key"] = root_key
+            self.conns[name]["sending_key"] = sending_key
+            self.conns[name]["their_public"] = self.certs[name]["public"]
             header["root_key"] = iv
             header["name"] = self.certificate["username"]
 
@@ -105,7 +111,7 @@ class MessengerClient:
         # header["root_key"] = self.conns[name]["root_key"]
         header["name"] = self.certificate["username"]
         header["iv"] = iv
-        header["public"] = self.public_key
+        header["public"] = self.conns[name]["public"]
         ciphertext = ciphertext_info
         return header, ciphertext
 
@@ -123,22 +129,30 @@ class MessengerClient:
         """
 
         header, ciphertext = message
-        is_public_key_changed = self.certs[name]["public"] != header["public"]
+
+        if name not in self.conns:
+            self.conns[name] = {}
+            self.conns[name]["private"] = self.private_key
+            self.conns[name]["their_public"] = self.certs[name]["public"]
+
+        
+        is_public_key_changed = self.conns[name]["their_public"] != header["public"]
 
 
-        if is_public_key_changed or name not in self.conns:
-            dh = compute_dh(self.private_key, header["public"])
+        if is_public_key_changed:
+            dh = compute_dh(self.conns[name]["private"], header["public"])
             root_key, receiving_key = hkdf(dh, header["root_key"] if "root_key" in header else self.conns[name]["root_key"], "test")
-            self.conns[name] = {"root_key": root_key, "receiving_key": receiving_key}
+            self.conns[name]["root_key"] = root_key
+            self.conns[name]["receiving_key"] = receiving_key
 
-            _ = self.generate_certificate(self.certificate["username"])
+            self.generate_new_session_keys(name)
 
-            dh = compute_dh(self.private_key, header["public"])
+            dh = compute_dh(self.conns[name]["private"], header["public"])
             root_key, chain_key = hkdf(dh, root_key, "test")
             self.conns[name]["root_key"] = root_key 
             self.conns[name]["sending_key"] = chain_key
 
-            self.certs[name]["public"] = header["public"]
+        self.conns[name]["their_public"] = header["public"]
 
         
 
@@ -150,6 +164,11 @@ class MessengerClient:
 
         
         return plaintext
+
+    def generate_new_session_keys(self, name):
+        conn_keys = generate_eg()
+        self.conns[name]["public"] = conn_keys["public"]
+        self.conns[name]["private"] = conn_keys["private"]
 
 
 ###################################
