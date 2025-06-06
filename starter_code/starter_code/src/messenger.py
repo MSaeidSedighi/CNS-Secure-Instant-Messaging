@@ -178,10 +178,38 @@ class MessengerClient:
 STATIC_IPSEC_KEY = hmac_to_aes_key(b"session_psk", "ipsec")
 
 def send_via_simulated_ipsec(dest_ip: str, dest_port: int, data: bytes):
-    iv = {}
-    # TO DO
+    """
+    Encrypts the data using AES-GCM with a static IPsec key and sends it over a socket.
+
+    Inputs:
+        dest_ip: str - IP address to send data to.
+        dest_port: int - Port number to send data to.
+        data: bytes - Raw byte data to encrypt and send.
+    """
+    iv = gen_random_salt()
+    cipherText,tag = encrypt_with_gcm(STATIC_IPSEC_KEY,data.decode(),iv)
+    payload = iv + tag + cipherText
+
+    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
+        s.connect((dest_ip,dest_port))
+        s.sendall(payload)
 
 def receive_via_simulated_ipsec(bind_ip: str, bind_port: int) -> bytes:
-    # TO DO
-    plaintext = {}
-    return plaintext
+    
+    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
+        s.bind((bind_ip,bind_port))
+        s.listen(1)
+        conn,_ = s.accept()
+        with conn:
+            data = b""
+            while True:
+                packet = conn.recv(4096)
+                if not packet:
+                    break
+                data += packet
+
+    iv = data[:16]
+    tag = data[16:32]
+    cipherText = data[32:]
+    plainText = decrypt_with_gcm(STATIC_IPSEC_KEY,(cipherText,tag),iv,decode_bytes=False)
+    return plainText
