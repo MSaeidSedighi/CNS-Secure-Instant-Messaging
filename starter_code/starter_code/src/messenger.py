@@ -98,8 +98,18 @@ class MessengerClient:
             self.conns[name]["root_key"] = root_key
             self.conns[name]["sending_key"] = sending_key
             self.conns[name]["their_public"] = self.certs[name]["public"]
+            self.conns[name]["key_changed"] = False
+            self.conns[name]["receiving_n_expected"] = 1
+            self.conns[name]["n"] = 0
+            self.conns[name]["pn"] = 0
             header["root_key"] = iv
             header["name"] = self.certificate["username"]
+        
+        if self.conns[name]["key_changed"]:
+            self.conns[name]["pn"] = self.conns[name]["n"]
+            self.conns[name]["n"] = 0
+            self.conns[name]["key_changed"] = False
+
 
         message_key, sending_key = kdf_ck(self.conns[name]["sending_key"])
         self.conns[name]["sending_key"] = sending_key
@@ -107,12 +117,19 @@ class MessengerClient:
         iv = gen_random_salt()
         ciphertext_info = encrypt_with_gcm(message_key, plaintext, iv)
 
+        self.conns[name]["n"] += 1
+
 
         # header["root_key"] = self.conns[name]["root_key"]
         header["name"] = self.certificate["username"]
         header["iv"] = iv
         header["public"] = self.conns[name]["public"]
+        header["n"] = self.conns[name]["n"]
+        header["pn"] = self.conns[name]["pn"]
         ciphertext = ciphertext_info
+
+        # print(f"{self.certificate['username']} sent to {name}:\n" + str(header) + f"\n expected n: {self.conns[name]['receiving_n_expected']}\n\n")
+
         return header, ciphertext
 
 
@@ -130,10 +147,16 @@ class MessengerClient:
 
         header, ciphertext = message
 
+
         if name not in self.conns:
             self.conns[name] = {}
             self.conns[name]["private"] = self.private_key
             self.conns[name]["their_public"] = self.certs[name]["public"]
+            self.conns[name]["key_changed"] = False
+            self.conns[name]["receiving_n_expected"] = 1
+            self.conns[name]["n"] = 0
+            self.conns[name]["pn"] = 0
+            self.conns[name]["root_key"] = header["iv"]
 
         
         is_public_key_changed = self.conns[name]["their_public"] != header["public"]
@@ -144,6 +167,8 @@ class MessengerClient:
             root_key, receiving_key = hkdf(dh, header["root_key"] if "root_key" in header else self.conns[name]["root_key"], "test")
             self.conns[name]["root_key"] = root_key
             self.conns[name]["receiving_key"] = receiving_key
+            self.conns[name]["key_changed"] = True
+            self.conns[name]["receiving_n_expected"] = 1
 
             self.generate_new_session_keys(name)
 
@@ -151,14 +176,21 @@ class MessengerClient:
             root_key, chain_key = hkdf(dh, root_key, "test")
             self.conns[name]["root_key"] = root_key 
             self.conns[name]["sending_key"] = chain_key
+        else:
+            self.conns[name]["key_changed"] = False
 
         self.conns[name]["their_public"] = header["public"]
 
-        
+        # print(f"header: {header['n']}/ conns: {self.conns[name]['receiving_n_expected']}\n")
+        if header["n"] == self.conns[name]["receiving_n_expected"]:
+            self.conns[name]["receiving_n_expected"] += 1
+        else:
+            raise Exception("Messages out of order")
+
+        # print(f"{self.certificate['username']} received from {name}:\n" + str(header) + f"\n expected n: {self.conns[name]['receiving_n_expected']}\n\n")
 
         message_key, receiving_key = kdf_ck(self.conns[name]["receiving_key"])
         self.conns[name]["receiving_key"] = receiving_key
-
 
         plaintext = decrypt_with_gcm(message_key, ciphertext, header["iv"])
 
