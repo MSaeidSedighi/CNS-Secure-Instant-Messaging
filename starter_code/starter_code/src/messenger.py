@@ -181,19 +181,27 @@ class MessengerClient:
 
         self.conns[name]["their_public"] = header["public"]
 
-        # print(f"header: {header['n']}/ conns: {self.conns[name]['receiving_n_expected']}\n")
-        if header["n"] == self.conns[name]["receiving_n_expected"]:
-            self.conns[name]["receiving_n_expected"] += 1
-        else:
-            raise Exception("Messages out of order")
+        n_expected = self.conns[name]["receiving_n_expected"]
+        n_received = header["n"]
 
-        # print(f"{self.certificate['username']} received from {name}:\n" + str(header) + f"\n expected n: {self.conns[name]['receiving_n_expected']}\n\n")
+        gap = n_received - n_expected
+
+        if gap < 0:
+            raise Exception(f"Replay attack or already received message: received n={n_received}, expected n={n_expected}")
+
+        if gap > 10:
+            raise Exception(f"Too many messages dropped: received n={n_received}, expected n={n_expected}")
+        
+        for _ in range(gap):
+            _, receiving_key = kdf_ck(self.conns[name]["receiving_key"])
+            self.conns[name]["receiving_key"] = receiving_key
 
         message_key, receiving_key = kdf_ck(self.conns[name]["receiving_key"])
         self.conns[name]["receiving_key"] = receiving_key
 
-        plaintext = decrypt_with_gcm(message_key, ciphertext, header["iv"])
+        self.conns[name]["receiving_n_expected"] = n_received + 1
 
+        plaintext = decrypt_with_gcm(message_key, ciphertext, header["iv"])
         
         return plaintext
 

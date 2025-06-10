@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./starter_code/starter_code/src"
+    ]
+}
