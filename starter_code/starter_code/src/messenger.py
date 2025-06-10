@@ -157,6 +157,10 @@ class MessengerClient:
             self.conns[name]["n"] = 0
             self.conns[name]["pn"] = 0
             self.conns[name]["root_key"] = header["iv"]
+            dh = compute_dh(self.conns[name]["private"], self.conns[name]["their_public"])
+            root_key, receiving_key = hkdf(dh, self.conns[name]["root_key"], "test")
+            self.conns[name]["root_key"] = root_key
+            self.conns[name]["receiving_key"] = receiving_key
 
         
         is_public_key_changed = self.conns[name]["their_public"] != header["public"]
